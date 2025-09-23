@@ -10,7 +10,7 @@ Choices: I thought about having each state as a node, with different choices bei
 
 Screen Shot:
 
-![ss](screenshot.png)
+![Screen Shot](icecreamshot.png)
 
 How To Play:
 

@@ -329,7 +329,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 		for (unsigned int n = 0; n < hb_buffer_len; n++) { // get GLsizei length (assume it's on one line)
 			FT_Load_Char(face, text[n], FT_LOAD_RENDER); // the new flag immediately converts to an anti-aliased bitmap
-			width += (GLsizei)(slot->bitmap.pitch);
+			width += (GLsizei)(slot->bitmap.pitch); // right now im basically trying to draw the letters next to each other
 			height = (GLsizei)(std::max(height, (GLsizei)slot->bitmap.rows));
 			// std::cout << "(" << pos[n].x_advance << ", " << pos[n].y_advance << ")" << std::endl;
 		}

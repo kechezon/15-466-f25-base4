@@ -381,8 +381,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 			cursor_x += slot->bitmap.width;
 		}
 
-		// TODO: Move to initialization
-		{
+		// TODO: Initialize once, draw each frame
 		//need a name for the texture object:
 		GLuint tex = 0;
 		glGenTextures(1, &tex); // store 1 texture name in tex

@@ -23,6 +23,7 @@
 //This file exists to check that programs that use freetype / harfbuzz link properly in this base code.
 //You probably shouldn't be looking here to learn to use either library.
 
+
 void my_draw_bitmap(FT_Bitmap *bitmap, int left, int top) {
 	unsigned int rows = bitmap->rows;
 	unsigned int columns = bitmap->width;
@@ -40,6 +41,11 @@ void my_draw_bitmap(FT_Bitmap *bitmap, int left, int top) {
 	return;
 }
 
+/**************************************************************************************
+ * Code here adapted from the following tutorials:
+ * https://freetype.org/freetype2/docs/tutorial/step1.html
+ * https://github.com/harfbuzz/harfbuzz-tutorial/blob/master/hello-harfbuzz-freetype.c
+ ***************************************************************************************/
 int main(int argc, char **argv) {
 
 	/******************

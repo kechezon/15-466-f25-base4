@@ -26,7 +26,7 @@
 #define MARGIN (FONT_SIZE * 0.5)
 
 // harfbuzz and freetype get data from glyphs
-const char *fontfile = &("dist/HammersmithOne-Regular.ttf"[0]);
+const char *fontfile = &("dist/HammersmithOne-Regular.ttf"[0]); // idk how to convert from std::string to char*, so I didn't use datapath
 const char *text = &("Hello World!"[0]);
 
 FT_Library library;
@@ -114,6 +114,11 @@ PlayMode::PlayMode() : scene(*hexapod_scene) {
 	// (note: position will be over-ridden in update())
 	leg_tip_loop = Sound::loop_3D(*dusty_floor_sample, 1.0f, get_leg_tip_position(), 10.0f);
 
+	// TEXT RENDERING ATTEMPT
+	/*
+	 * The rest of the code in this scope comes from the following freetype tutorial:
+	 * https://freetype.org/freetype2/docs/tutorial/step1.html
+	 */
 	// harfbuzz and freetype get data from glyphs
 	if ((ft_error = FT_Init_FreeType( &library )))
 		abort();
@@ -142,8 +147,8 @@ PlayMode::PlayMode() : scene(*hexapod_scene) {
 											// arg 4 tells you length of features array
 
 	/* Glyph info */
-	hb_buffer_len = hb_buffer_get_length(hb_buffer);
-	info = hb_buffer_get_glyph_infos(hb_buffer, NULL); // arg 2 is pointer to an unsigned int to write length of output array to
+	// hb_buffer_len = hb_buffer_get_length(hb_buffer);
+	info = hb_buffer_get_glyph_infos(hb_buffer, &hb_buffer_len); // arg 2 is pointer to an unsigned int to write length of output array to
 																		// if you modify the buffer contents, the return pointer is invalidated!
 																		// Making arg 2 null means I don't care about the length written to the hb_buffer
 	pos = hb_buffer_get_glyph_positions(hb_buffer, NULL); // returns array of positions. Same arg 2 return and buffer modification disclaimer
@@ -319,41 +324,76 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	
 		//---------------  create and upload texture data ----------------
+		// TEXT RENDERING ATTEMPT
+		/******************************************************
+		 * Based on circle drawing code provided by Jim McCann
+		 ******************************************************/
 		//texture size:
-		// GLsizei width = 2304;
-		// GLsizei height = 480;
-		GLsizei width = 0;
-		GLsizei height = 0;
+		unsigned int width = 0;
+		unsigned int height = 0;
 		//pixel data for texture:
 		FT_GlyphSlot slot = face->glyph; // shortcut to where we'll draw the glyph. FT_GlyphSlot is a pointer type
 
-		for (unsigned int n = 0; n < hb_buffer_len; n++) { // get GLsizei length (assume it's on one line)
-			FT_Load_Char(face, text[n], FT_LOAD_RENDER); // the new flag immediately converts to an anti-aliased bitmap
-			width += (GLsizei)(slot->bitmap.pitch); // right now im basically trying to draw the letters next to each other
-			height = (GLsizei)(std::max(height, (GLsizei)slot->bitmap.rows));
+		for (unsigned int i = 0; i < hb_buffer_len; i++) { // get GLsizei length (assume it's on one line)
+			FT_UInt	glyph_index = FT_Get_Char_Index(face, text[i]);
+			FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
+			FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+
+			printf("%c: (%i + %i), (%i + %i)\n", text[i], pos[i].x_offset, pos[i].x_advance, pos[i].y_offset, pos[i].y_advance);
+
+			width += (GLsizei)(pos[i].x_offset + pos[i].x_advance); // right now im basically trying to draw the letters next to each other
+			height = (GLsizei)(std::max(height, slot->bitmap.rows));
 			// std::cout << "(" << pos[n].x_advance << ", " << pos[n].y_advance << ")" << std::endl;
 		}
-		std::vector< uint8_t > data(width*height);
+		std::vector< uint8_t > data(width*height, 0);
+		printf("Vector of size %i by %i\n", width, height);
 
 		// DEBUG
-		// char intensity[10] = " .-*#xOX@";
+		char intensity[10] = " .-*#xOX@";
 
-		GLsizei current_x = 0;
-		GLsizei current_y = 0;
-		for (unsigned int n = 0; n < hb_buffer_len; n++) {
-			FT_Load_Char(face, text[n], FT_LOAD_RENDER); // the new flag immediately converts to an anti-aliased bitmap
-			// std::cout << "(" << current_x << ", " << current_y << ")" << std::endl;
-			GLsizei maxY = current_y + (GLsizei)(slot->bitmap.rows);
-			for (GLsizei y = current_y; y < maxY; ++y) {
-				for (GLsizei x = current_x; x < current_x + (GLsizei)(slot->bitmap.pitch); ++x) {
-					uint8_t c = (slot->bitmap.buffer)[y * slot->bitmap.pitch + x];
-					// DEBUG: printf("%c", intensity[c * 8 / 255]);
-					data[(maxY - 1 - (y - current_y)) * width + x] = c;
+		// GLsizei current_x = 0;
+		// GLsizei current_y = 0;
+		// for (unsigned int n = 0; n < hb_buffer_len; n++) {
+		// 	FT_Load_Char(face, text[n], FT_LOAD_RENDER); // the new flag immediately converts to an anti-aliased bitmap
+		// 	// // std::cout << "(" << current_x << ", " << current_y << ")" << std::endl;
+		// 	GLsizei maxY = current_y + (GLsizei)(slot->bitmap.rows);
+		// 	for (GLsizei y = current_y; y < maxY; ++y) {
+		// 		for (GLsizei x = current_x; x < current_x + (GLsizei)(slot->bitmap.pitch); ++x) {
+		// 			uint8_t c = (slot->bitmap.buffer)[y * slot->bitmap.pitch + x];
+		// 			// DEBUG:
+		// 			printf("%c", intensity[c * 8 / 255]);
+		// 			// draw_bitmap_char(&(slot->bitmap), data, current_x, current_y); // second attempt, but nothing gets rendered
+		// 			data[(maxY - 1 - (y - current_y)) * width + x] = c;
+		// 		}
+		// 		// DEBUG:
+		// 		printf("\n");
+		// 	}
+		// 	current_x += (int)slot->bitmap.pitch;
+		// 	current_y += (int)pos[n].y_advance;
+		// }
+
+
+		unsigned int cursor_x = 0;
+		unsigned int cursor_y = 0;
+		for (unsigned int i = 0; i < hb_buffer_len; i++) {
+			FT_UInt	glyph_index = FT_Get_Char_Index(face, text[i]);
+			FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
+			FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+
+			// loop things
+			for (unsigned int y = 0; y < slot->bitmap.rows; y++) {
+				unsigned int glyph_width = pos[i].x_offset + pos[i].x_advance;
+				for (unsigned int x = 0; x < glyph_width; x++) {
+					uint8_t c = (slot->bitmap.buffer)[y * glyph_width + x]; // retrieve value
+					printf("%c", intensity[((unsigned int) c) * 8 / 255]);
+					data[(cursor_y + y) * width + (cursor_x + x)] = c; // place in data to be drawn
 				}
-				// DEBUG: printf("\n");
+				printf("\n");
 			}
-			current_x += (int)slot->bitmap.pitch;
-			current_y += (int)pos[n].y_advance;
+
+			printf("\n\n");
+
+			cursor_x += slot->bitmap.width;
 		}
 
 		//need a name for the texture object:
@@ -468,6 +508,10 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		glBindBuffer(GL_ARRAY_BUFFER, buffer);
 		glBufferData(GL_ARRAY_BUFFER, attribs.size() * sizeof(attribs[0]), attribs.data(), GL_STREAM_DRAW);
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+		/******************************************
+		 * /end Jim's provided text rendering code
+		 ******************************************/
 
 
 		//----------- draw the mesh -----------

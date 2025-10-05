@@ -27,24 +27,12 @@
 
 // harfbuzz and freetype get data from glyphs
 const char *fontfile = &("dist/HammersmithOne-Regular.ttf"[0]); // idk how to convert from std::string to char*, so I didn't use datapath
-const char *text = &("Hello World!"[0]);
+// const char *text = &("Hello World!"[0]);
 
 FT_Library library;
 FT_Face face;
 FT_Error ft_error;
 
-// if ((ft_error = FT_Init_FreeType( &library )))
-// 	abort();
-// // if ((ft_error = FT_New_Face(library, "dist/HammersmithOne-Regular.ttf", 0, &face)))
-// // Loads a font face (descriptor of a given typeface and style)
-// // Now to access that face data with a face object (models information that globally describes a face)
-// if ((ft_error = FT_New_Face(library, fontfile, 0, &face)))
-// 	abort();
-// // face->size lets you get pixel size. This size object models all information needed w.r.t. character sizes
-// // Use FT_Set_Char_Size, passing a handle to the face object you have.
-// // Width and height are expressed in 1/64th of a point (0 means same as the other). You can also see the pixel size.
-// if ((ft_error = FT_Set_Char_Size(face, FONT_SIZE*64, FONT_SIZE*64, 0, 0)))
-// 	abort();
 
 /* Create hb-ft font*/
 hb_font_t *hb_font;
@@ -58,6 +46,21 @@ hb_glyph_info_t *info;
 hb_glyph_position_t *pos; // returns array of positions. Same arg 2 return and buffer modification disclaimer
 
 GLuint hexapod_meshes_for_lit_color_texture_program = 0;
+GLuint buffer_for_color_texture_program = 0;
+GLuint tex1 = 0;
+GLuint tex2 = 0;
+
+//format for the mesh data:
+struct Vertex {
+	glm::vec2 Position;
+	glm::u8vec4 Color;
+	glm::vec2 TexCoord;
+};
+std::vector< Vertex > attribs1;
+std::vector< Vertex > attribs2;
+
+int drawcount = 0;
+
 Load< MeshBuffer > hexapod_meshes(LoadTagDefault, []() -> MeshBuffer const * {
 	MeshBuffer const *ret = new MeshBuffer(data_path("hexapod.pnct"));
 	hexapod_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
@@ -90,6 +93,246 @@ Load< Sound::Sample > honk_sample(LoadTagDefault, []() -> Sound::Sample const * 
 	return new Sound::Sample(data_path("honk.wav"));
 });
 
+/******************************************************
+ * TEXT RENDERING ATTEMPT
+ * Adapted from xor/circle rendering code provided by Jim McCann,
+ * and the following tutorials:
+ * https://freetype.org/freetype2/docs/tutorial/step1.html
+ * https://github.com/harfbuzz/harfbuzz-tutorial/blob/master/hello-harfbuzz-freetype.c
+ ******************************************************/
+
+GLuint create_text(const char *mytext, float left_clip, float right_clip, float bottom_clip, float top_clip) {
+	
+
+	 // harfbuzz buffer things
+	// replaces invalid UTF-8 characters with hb_buffer's replacement codepoint
+		/* Create hb-buffer and populate*/
+	hb_buffer = hb_buffer_create(); // takes no arguments
+	hb_buffer_add_utf8(hb_buffer, mytext, -1, 0, -1);
+	hb_buffer_guess_segment_properties(hb_buffer); // sets unset buffer segment properties based on buffer's contents
+
+	/* Shape the buffer! */
+	hb_shape(hb_font, hb_buffer, NULL, 0); // arg 3 (features) controls features applied during shaping.
+											// arg 4 tells you length of features array
+
+	/* Glyph info */
+	// hb_buffer_len = hb_buffer_get_length(hb_buffer);
+	info = hb_buffer_get_glyph_infos(hb_buffer, &hb_buffer_len); // arg 2 is pointer to an unsigned int to write length of output array to
+																		// if you modify the buffer contents, the return pointer is invalidated!
+																		// Making arg 2 null means I don't care about the length written to the hb_buffer
+	pos = hb_buffer_get_glyph_positions(hb_buffer, NULL); // returns array of positions. Same arg 2 return and buffer modification disclaimer
+
+	//texture size:
+	unsigned int width = 0;
+	unsigned int height = 0;
+	//pixel data for texture:
+	FT_GlyphSlot slot = face->glyph; // shortcut to where we'll draw the glyph. FT_GlyphSlot is a pointer type
+
+	// Data of the message
+	for (unsigned int i = 0; i < hb_buffer_len; i++) { // get GLsizei length (assume it's on one line)
+		FT_UInt	glyph_index = FT_Get_Char_Index(face, mytext[i]);
+		FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
+		FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+
+		// printf("%c: (%i + %i), (%i + %i)\n", text[i], pos[i].x_offset, pos[i].x_advance, pos[i].y_offset, pos[i].y_advance);
+		printf("%c: %i, %i\n", mytext[i], slot->bitmap.width, slot->bitmap.rows);
+
+		// width += (GLsizei)(pos[i].x_offset + pos[i].x_advance); // right now im basically trying to draw the letters next to each other
+		width += (GLsizei)(slot->bitmap.width); // right now im basically trying to draw the letters next to each other
+		height = (GLsizei)(std::max(height, slot->bitmap.rows)); //pos[i].y_offset and y_advance are 0...
+		// std::cout << "(" << pos[n].x_advance << ", " << pos[n].y_advance << ")" << std::endl;
+	}
+	std::vector< uint8_t > data(width*height, 0);
+	printf("Vector of size %i by %i (%i)\n", width, height, width * height);
+
+	// DEBUG
+	// char intensity[10] = " .-*#xOX@";
+
+	unsigned int cursor_x = 0;
+	unsigned int cursor_y = 0;
+	for (unsigned int i = 0; i < hb_buffer_len; i++) {
+		FT_UInt	glyph_index = FT_Get_Char_Index(face, mytext[i]);
+		FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
+		FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+
+		// loop things to draw the character
+		for (unsigned int y = 0; y < slot->bitmap.rows; y++) {
+			unsigned int glyph_width = slot->bitmap.width;
+			for (unsigned int x = 0; x < glyph_width; x++) {
+				uint8_t c = (slot->bitmap.buffer)[y * glyph_width + x]; // retrieve value
+				// printf("%c", intensity[((unsigned int) c) * 8 / 255]);
+
+				// we read from the bitmap and to the data in opposite directions, so the indexing needs to be flipped!
+				int data_y = slot->bitmap.rows - (cursor_y + y) - 1;
+
+				if (y == 0)
+					printf("index %i\n", data_y * width + (cursor_x + x));
+
+				data[data_y * width + (cursor_x + x)] = c; // place in data to be drawn
+			}
+			// printf("\n");
+		}
+
+		// printf("\n\n");
+
+		cursor_x += slot->bitmap.width;
+	}
+
+	//---------------  create and upload texture data ----------------
+
+	// This code, up to "draw mesh" (exclusive) should be called only when creating new text
+	//need a name for the texture object:
+	// GLuint tex = 0;
+	glGenTextures(1, &tex1); // store 1 texture name in tex1
+	//attach texture object to the GL_TEXTURE_2D binding point:
+	glBindTexture(GL_TEXTURE_2D, tex1);
+	//upload data: (see: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glTexImage2D.xhtml )
+	glTexImage2D(
+		GL_TEXTURE_2D, //target -- the binding point this call is uploading to
+		0, //level -- the mip level; 0 = the base level
+		GL_R8,  //internalformat -- channels and storage used on the GPU for the texture; GL_R8 means one channel, 8-bit fixed point
+		width, //width of texture
+		height, //height of texture
+		0, //border -- must be 0
+		GL_RED, //format -- how the data to be uploaded is structured; GL_RED means one channel
+		GL_UNSIGNED_BYTE, //type -- how each element of a pixel is stored
+		data.data() //data -- pointer to the texture data
+	);
+	//set up texture sampling state:
+	//clamp texture coordinate to edge of texture: (GL_REPEAT can also be useful in some cases)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	//use linear interpolation to magnify:
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	//use trilinear interpolation (linear interpolation of linearly-interpolated mipmaps) to minify:
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+	//ask OpenGL to make the mipmaps for us:
+	glGenerateMipmap(GL_TEXTURE_2D);
+
+	//de-attach texture:
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	//----------- set up place to store mesh that references the data -----------
+
+	//create a buffer object to store mesh data in:
+	GLuint buffer = 0;
+	glGenBuffers(1, &buffer);
+	glBindBuffer(GL_ARRAY_BUFFER, buffer); //(buffer created when bound)
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	//create a vertex array object that references the buffer:
+	buffer_for_color_texture_program = 0;
+	glGenVertexArrays(1, &buffer_for_color_texture_program);
+	glBindVertexArray(buffer_for_color_texture_program);
+
+	//configure the vertex array object:
+
+	glBindBuffer(GL_ARRAY_BUFFER, buffer); //will take data from 'buffer'
+
+	//set up Position to read from the buffer:
+	//see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glVertexAttribPointer.xhtml
+	glVertexAttribPointer(
+		color_texture_program->Position_vec4, //attribute
+		2, //size
+		GL_FLOAT, //type
+		GL_FALSE, //normalized
+		sizeof(Vertex), //stride
+		(GLbyte *)0 + offsetof(Vertex, Position) //offset
+	);
+	glEnableVertexAttribArray(color_texture_program->Position_vec4);
+
+	//set up Color to read from the buffer:
+	glVertexAttribPointer( color_texture_program->Color_vec4, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (GLbyte *)0 + offsetof(Vertex, Color));
+	glEnableVertexAttribArray(color_texture_program->Color_vec4);
+
+	//set up TexCoord to read from the buffer:
+	glVertexAttribPointer( color_texture_program->TexCoord_vec2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLbyte *)0 + offsetof(Vertex, TexCoord));
+	glEnableVertexAttribArray(color_texture_program->TexCoord_vec2);
+
+	//done configuring vertex array, so unbind things:
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+
+
+	//----------- create and upload a mesh that references the data -----------
+
+	std::vector< Vertex > *attribs;
+	if (drawcount == 0) {
+		attribs1.reserve(4);
+		attribs = &attribs1;
+		drawcount++;
+	}
+	else {
+		attribs2.reserve(4);
+		attribs = &attribs2;
+	}
+
+	//if drawn as a triangle strip, this will be a square with the lower-left corner at (0,0) and the upper right at (1,1):
+	attribs->emplace_back(Vertex{
+		.Position = glm::vec2(left_clip, bottom_clip),
+		.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
+		.TexCoord = glm::vec2(0.0f, 0.0f),
+	});
+	attribs->emplace_back(Vertex{
+		.Position = glm::vec2(left_clip, top_clip),
+		.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
+		.TexCoord = glm::vec2(0.0f, 1.0f),
+	});
+	attribs->emplace_back(Vertex{
+		.Position = glm::vec2(right_clip, bottom_clip),
+		.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
+		.TexCoord = glm::vec2(1.0f, 0.0f),
+	});
+	attribs->emplace_back(Vertex{
+		.Position = glm::vec2(right_clip, top_clip),
+		.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
+		.TexCoord = glm::vec2(1.0f, 1.0f),
+	});
+
+	//upload attribs to buffer:
+	glBindBuffer(GL_ARRAY_BUFFER, buffer);
+	glBufferData(GL_ARRAY_BUFFER, attribs->size() * sizeof((*attribs)[0]), attribs->data(), GL_STREAM_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	return buffer;
+
+
+	//----------- draw the mesh -----------
+	// TODO: this should be done every frame?
+
+	//draw using the color_texture_program:
+	// glUseProgram(color_texture_program->program);
+	// //draw with attributes from our buffer, as referenced by the vertex array:
+	// glBindVertexArray(buffer_for_color_texture_program);
+	// //draw using texture stored in tex:
+	// glBindTexture(GL_TEXTURE_2D, tex);
+	
+	// //this particular shader program multiplies all positions by this matrix: (hmm, old naming style; I should have fixed that)
+	// // (just setting it to the identity, so Positions are directly in clip space)
+	// glUniformMatrix4fv(color_texture_program->OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
+
+	// //draw without depth testing (so will draw atop everything else):
+	// glDisable(GL_DEPTH_TEST);
+	// //draw with alpha blending (so transparent parts of the texture look transparent):
+	// glEnable(GL_BLEND);
+	// //standard 'over' blending:
+	// glBlendEquation(GL_FUNC_ADD);
+	// glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	// //actually draw:
+	// glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei)attribs.size());
+
+
+	// //turn off blending:
+	// glDisable(GL_BLEND);
+	// //...leave depth test off, since code that wants it will turn it back on
+
+	// //unbind texture, vertex array, program:
+	// glBindTexture(GL_TEXTURE_2D, 0);
+	// glBindVertexArray(0);
+	// glUseProgram(0);
+}
 
 PlayMode::PlayMode() : scene(*hexapod_scene) {
 	//get pointers to leg for convenience:
@@ -137,22 +380,24 @@ PlayMode::PlayMode() : scene(*hexapod_scene) {
 	/* Create hb-ft font*/
 	hb_font = hb_ft_font_create(face, NULL); // uses face to create hb font. second argument is a callback to call when font object is not needed (destructor)
 
-	/* Create hb-buffer and populate*/
-	hb_buffer = hb_buffer_create(); // takes no arguments
-	// replaces invalid UTF-8 characters with hb_buffer's replacement codepoint
-	hb_buffer_add_utf8(hb_buffer, text, -1, 0, -1);
-	hb_buffer_guess_segment_properties(hb_buffer); // sets unset buffer segment properties based on buffer's contents
+	// create_text("Hello World!!", -0.9f, 0.9f, -1.0f, -0.25f);
+	create_text("Triangle?", -0.9f, 0.9f, 0.25f, 1.0f);
 
-	/* Shape the buffer! */
-	hb_shape(hb_font, hb_buffer, NULL, 0); // arg 3 (features) controls features applied during shaping.
-											// arg 4 tells you length of features array
+	// hb_buffer_add_utf8(hb_buffer, text, -1, 0, -1);
+	// hb_buffer_guess_segment_properties(hb_buffer); // sets unset buffer segment properties based on buffer's contents
 
-	/* Glyph info */
-	// hb_buffer_len = hb_buffer_get_length(hb_buffer);
-	info = hb_buffer_get_glyph_infos(hb_buffer, &hb_buffer_len); // arg 2 is pointer to an unsigned int to write length of output array to
-																		// if you modify the buffer contents, the return pointer is invalidated!
-																		// Making arg 2 null means I don't care about the length written to the hb_buffer
-	pos = hb_buffer_get_glyph_positions(hb_buffer, NULL); // returns array of positions. Same arg 2 return and buffer modification disclaimer
+	// /* Shape the buffer! */
+	// hb_shape(hb_font, hb_buffer, NULL, 0); // arg 3 (features) controls features applied during shaping.
+	// 										// arg 4 tells you length of features array
+
+	// /* Glyph info */
+	// // hb_buffer_len = hb_buffer_get_length(hb_buffer);
+	// info = hb_buffer_get_glyph_infos(hb_buffer, &hb_buffer_len); // arg 2 is pointer to an unsigned int to write length of output array to
+	// 																	// if you modify the buffer contents, the return pointer is invalidated!
+	// 																	// Making arg 2 null means I don't care about the length written to the hb_buffer
+	// pos = hb_buffer_get_glyph_positions(hb_buffer, NULL); // returns array of positions. Same arg 2 return and buffer modification disclaimer
+
+	// create_text();
 }
 
 PlayMode::~PlayMode() {
@@ -323,189 +568,58 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	}
 	GL_ERRORS();
 
-	
-		//---------------  create and upload texture data ----------------
-		/******************************************************
-		 * TEXT RENDERING ATTEMPT
-		 * Adapted from xor/circle rendering code provided by Jim McCann
-		 ******************************************************/
-		//texture size:
-		unsigned int width = 0;
-		unsigned int height = 0;
-		//pixel data for texture:
-		FT_GlyphSlot slot = face->glyph; // shortcut to where we'll draw the glyph. FT_GlyphSlot is a pointer type
 
-		for (unsigned int i = 0; i < hb_buffer_len; i++) { // get GLsizei length (assume it's on one line)
-			FT_UInt	glyph_index = FT_Get_Char_Index(face, text[i]);
-			FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
-			FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
-
-			// printf("%c: (%i + %i), (%i + %i)\n", text[i], pos[i].x_offset, pos[i].x_advance, pos[i].y_offset, pos[i].y_advance);
-			printf("%c: %i, %i\n", text[i], slot->bitmap.width, slot->bitmap.rows);
-
-			// width += (GLsizei)(pos[i].x_offset + pos[i].x_advance); // right now im basically trying to draw the letters next to each other
-			width += (GLsizei)(slot->bitmap.width); // right now im basically trying to draw the letters next to each other
-			height = (GLsizei)(std::max(height, slot->bitmap.rows)); //pos[i].y_offset and y_advance are 0...
-			// std::cout << "(" << pos[n].x_advance << ", " << pos[n].y_advance << ")" << std::endl;
-		}
-		std::vector< uint8_t > data(width*height, 0);
-		printf("Vector of size %i by %i\n", width, height);
-
-		// DEBUG
-		// char intensity[10] = " .-*#xOX@";
-
-
-		unsigned int cursor_x = 0;
-		unsigned int cursor_y = 0;
-		for (unsigned int i = 0; i < hb_buffer_len; i++) {
-			FT_UInt	glyph_index = FT_Get_Char_Index(face, text[i]);
-			FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
-			FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
-
-			// loop things
-			for (unsigned int y = 0; y < slot->bitmap.rows; y++) {
-				unsigned int glyph_width = slot->bitmap.width;
-				for (unsigned int x = 0; x < glyph_width; x++) {
-					uint8_t c = (slot->bitmap.buffer)[y * glyph_width + x]; // retrieve value
-					// printf("%c", intensity[((unsigned int) c) * 8 / 255]);
-
-					// we read from the bitmap and to the data in opposite directions, so the indexing needs to be flipped!
-					int data_y = slot->bitmap.rows - (cursor_y + y) - 1;
-					data[data_y * width + (cursor_x + x)] = c; // place in data to be drawn
-				}
-				printf("\n");
-			}
-
-			printf("\n\n");
-
-			cursor_x += slot->bitmap.width;
-		}
-
-		// TODO: Initialize once, draw each frame
-		//need a name for the texture object:
-		GLuint tex = 0;
-		glGenTextures(1, &tex); // store 1 texture name in tex
-		//attach texture object to the GL_TEXTURE_2D binding point:
-		glBindTexture(GL_TEXTURE_2D, tex);
-		//upload data: (see: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glTexImage2D.xhtml )
-		glTexImage2D(
-			GL_TEXTURE_2D, //target -- the binding point this call is uploading to
-			0, //level -- the mip level; 0 = the base level
-			GL_R8,  //internalformat -- channels and storage used on the GPU for the texture; GL_R8 means one channel, 8-bit fixed point
-			width, //width of texture
-			height, //height of texture
-			0, //border -- must be 0
-			GL_RED, //format -- how the data to be uploaded is structured; GL_RED means one channel
-			GL_UNSIGNED_BYTE, //type -- how each element of a pixel is stored
-			data.data() //data -- pointer to the texture data
-		);
-		//set up texture sampling state:
-		//clamp texture coordinate to edge of texture: (GL_REPEAT can also be useful in some cases)
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		//use linear interpolation to magnify:
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		//use trilinear interpolation (linear interpolation of linearly-interpolated mipmaps) to minify:
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-
-		//ask OpenGL to make the mipmaps for us:
-		glGenerateMipmap(GL_TEXTURE_2D);
-
-		//de-attach texture:
-		glBindTexture(GL_TEXTURE_2D, 0);
-
-		//----------- set up place to store mesh that references the data -----------
-
-		//format for the mesh data:
-		struct Vertex {
-			glm::vec2 Position;
-			glm::u8vec4 Color;
-			glm::vec2 TexCoord;
-		};
-
-		//create a buffer object to store mesh data in:
-		GLuint buffer = 0;
-		glGenBuffers(1, &buffer);
-		glBindBuffer(GL_ARRAY_BUFFER, buffer); //(buffer created when bound)
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-		//create a vertex array object that references the buffer:
-		GLuint buffer_for_color_texture_program = 0;
-		glGenVertexArrays(1, &buffer_for_color_texture_program);
-		glBindVertexArray(buffer_for_color_texture_program);
-
-		//configure the vertex array object:
-
-		glBindBuffer(GL_ARRAY_BUFFER, buffer); //will take data from 'buffer'
-
-		//set up Position to read from the buffer:
-		//see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glVertexAttribPointer.xhtml
-		glVertexAttribPointer(
-			color_texture_program->Position_vec4, //attribute
-			2, //size
-			GL_FLOAT, //type
-			GL_FALSE, //normalized
-			sizeof(Vertex), //stride
-			(GLbyte *)0 + offsetof(Vertex, Position) //offset
-		);
-		glEnableVertexAttribArray(color_texture_program->Position_vec4);
-
-		//set up Color to read from the buffer:
-		glVertexAttribPointer( color_texture_program->Color_vec4, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (GLbyte *)0 + offsetof(Vertex, Color));
-		glEnableVertexAttribArray(color_texture_program->Color_vec4);
-
-		//set up TexCoord to read from the buffer:
-		glVertexAttribPointer( color_texture_program->TexCoord_vec2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLbyte *)0 + offsetof(Vertex, TexCoord));
-		glEnableVertexAttribArray(color_texture_program->TexCoord_vec2);
-
-		//done configuring vertex array, so unbind things:
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		glBindVertexArray(0);
-
-
-		//----------- create and upload a mesh that references the data -----------
-
-		std::vector< Vertex > attribs;
-		attribs.reserve(4);
-
-		//if drawn as a triangle strip, this will be a square with the lower-left corner at (0,0) and the upper right at (1,1):
-		attribs.emplace_back(Vertex{
-			.Position = glm::vec2(-0.9f, -1.0f),
-			.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
-			.TexCoord = glm::vec2(0.0f, 0.0f),
-		});
-			attribs.emplace_back(Vertex{
-			.Position = glm::vec2(-0.9f, -0.25f),
-			.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
-			.TexCoord = glm::vec2(0.0f, 1.0f),
-		});
-		attribs.emplace_back(Vertex{
-			.Position = glm::vec2(0.9f, -1.0f),
-			.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
-			.TexCoord = glm::vec2(1.0f, 0.0f),
-		});
-		attribs.emplace_back(Vertex{
-			.Position = glm::vec2(0.9f, -0.25f),
-			.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
-			.TexCoord = glm::vec2(1.0f, 1.0f),
-		});
-
-		//upload attribs to buffer:
-		glBindBuffer(GL_ARRAY_BUFFER, buffer);
-		glBufferData(GL_ARRAY_BUFFER, attribs.size() * sizeof(attribs[0]), attribs.data(), GL_STREAM_DRAW);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-
+	// {	
+	// 	glUseProgram(color_texture_program->program);
+	// 	//draw with attributes from our buffer, as referenced by the vertex array:
+	// 	glBindVertexArray(buffer_for_color_texture_program);
+	// 	//draw using texture stored in tex1:
+	// 	glBindTexture(GL_TEXTURE_2D, tex2);
 		
+	// 	//this particular shader program multiplies all positions by this matrix: (hmm, old naming style; I should have fixed that)
+	// 	// (just setting it to the identity, so Positions are directly in clip space)
+	// 	glUniformMatrix4fv(color_texture_program->OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
+
+	// 	//draw without depth testing (so will draw atop everything else):
+	// 	glDisable(GL_DEPTH_TEST);
+	// 	//draw with alpha blending (so transparent parts of the texture look transparent):
+	// 	glEnable(GL_BLEND);
+	// 	//standard 'over' blending:
+	// 	glBlendEquation(GL_FUNC_ADD);
+	// 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	// 	//actually draw:
+	// 	glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei)attribs2.size());
 
 
-		//----------- draw the mesh -----------
+	// 	//turn off blending:
+	// 	glDisable(GL_BLEND);
+	// 	//...leave depth test off, since code that wants it will turn it back on
 
-		//draw using the color_texture_program:
+
+	// 	//unbind texture, vertex array, program:
+	// 	glBindTexture(GL_TEXTURE_2D, 0);
+	// 	glBindVertexArray(0);
+	// 	glUseProgram(0);
+	// }
+
+	/******************************************************
+	 * TEXT RENDERING ATTEMPT
+	 * Adapted from xor/circle rendering code provided by Jim McCann
+	 ******************************************************/
+	GLuint buffer = create_text("Hello World!", -0.9f, 0.9f, 0.25f, 1.0f);
+	drawcount = 0;
+
+	//----------- draw the mesh -----------
+	// this should be done every frame?
+
+	//draw using the color_texture_program:
+	{	
 		glUseProgram(color_texture_program->program);
 		//draw with attributes from our buffer, as referenced by the vertex array:
 		glBindVertexArray(buffer_for_color_texture_program);
-		//draw using texture stored in tex:
-		glBindTexture(GL_TEXTURE_2D, tex);
+		//draw using texture stored in tex1:
+		glBindTexture(GL_TEXTURE_2D, tex1);
 		
 		//this particular shader program multiplies all positions by this matrix: (hmm, old naming style; I should have fixed that)
 		// (just setting it to the identity, so Positions are directly in clip space)
@@ -520,7 +634,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 		//actually draw:
-		glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei)attribs.size());
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei)attribs1.size());
 
 
 		//turn off blending:
@@ -532,18 +646,19 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		glBindTexture(GL_TEXTURE_2D, 0);
 		glBindVertexArray(0);
 		glUseProgram(0);
+	}
 
-		//----------- free allocated buffers / data -----------
+	// ----------- free allocated buffers / data -----------
 
-		glDeleteVertexArrays(1, &buffer_for_color_texture_program);
-		buffer_for_color_texture_program = 0;
-		glDeleteBuffers(1, &buffer);
-		buffer = 0;
-		glDeleteTextures(1, &tex);
-		tex = 0;
-		/******************************************
-		 * /end Jim's provided xor/circle image rendering code
-		 ******************************************/
+	glDeleteVertexArrays(1, &buffer_for_color_texture_program);
+	buffer_for_color_texture_program = 0;
+	glDeleteBuffers(1, &buffer);
+	buffer = 0;
+	glDeleteTextures(1, &tex1);
+	tex1 = 0;
+	/******************************************
+	 * /end Jim's provided xor/circle image rendering code
+	 ******************************************/
 }
 
 glm::vec3 PlayMode::get_leg_tip_position() {

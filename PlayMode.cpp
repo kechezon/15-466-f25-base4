@@ -114,11 +114,12 @@ PlayMode::PlayMode() : scene(*hexapod_scene) {
 	// (note: position will be over-ridden in update())
 	leg_tip_loop = Sound::loop_3D(*dusty_floor_sample, 1.0f, get_leg_tip_position(), 10.0f);
 
-	// TEXT RENDERING ATTEMPT
-	/*
-	 * The rest of the code in this scope comes from the following freetype tutorial:
+	/*********************************************************************************
+	 * TEXT RENDERING ATTEMPT
+	 * The rest of the code in this scope comes from the following tutorials:
 	 * https://freetype.org/freetype2/docs/tutorial/step1.html
-	 */
+	 * https://github.com/harfbuzz/harfbuzz-tutorial/blob/master/hello-harfbuzz-freetype.c
+	 ********************************************************************************/
 	// harfbuzz and freetype get data from glyphs
 	if ((ft_error = FT_Init_FreeType( &library )))
 		abort();
@@ -324,9 +325,9 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	
 		//---------------  create and upload texture data ----------------
-		// TEXT RENDERING ATTEMPT
 		/******************************************************
-		 * Based on xor/circle rendering code provided by Jim McCann
+		 * TEXT RENDERING ATTEMPT
+		 * Adapted from xor/circle rendering code provided by Jim McCann
 		 ******************************************************/
 		//texture size:
 		unsigned int width = 0;
@@ -339,7 +340,8 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 			FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
 			FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
 
-			printf("%c: (%i + %i), (%i + %i)\n", text[i], pos[i].x_offset, pos[i].x_advance, pos[i].y_offset, pos[i].y_advance);
+			// printf("%c: (%i + %i), (%i + %i)\n", text[i], pos[i].x_offset, pos[i].x_advance, pos[i].y_offset, pos[i].y_advance);
+			printf("%c: %i, %i\n", text[i], slot->bitmap.width, slot->bitmap.rows);
 
 			// width += (GLsizei)(pos[i].x_offset + pos[i].x_advance); // right now im basically trying to draw the letters next to each other
 			width += (GLsizei)(slot->bitmap.width); // right now im basically trying to draw the letters next to each other
@@ -351,27 +353,6 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 		// DEBUG
 		char intensity[10] = " .-*#xOX@";
-
-		// GLsizei current_x = 0;
-		// GLsizei current_y = 0;
-		// for (unsigned int n = 0; n < hb_buffer_len; n++) {
-		// 	FT_Load_Char(face, text[n], FT_LOAD_RENDER); // the new flag immediately converts to an anti-aliased bitmap
-		// 	// // std::cout << "(" << current_x << ", " << current_y << ")" << std::endl;
-		// 	GLsizei maxY = current_y + (GLsizei)(slot->bitmap.rows);
-		// 	for (GLsizei y = current_y; y < maxY; ++y) {
-		// 		for (GLsizei x = current_x; x < current_x + (GLsizei)(slot->bitmap.pitch); ++x) {
-		// 			uint8_t c = (slot->bitmap.buffer)[y * slot->bitmap.pitch + x];
-		// 			// DEBUG:
-		// 			printf("%c", intensity[c * 8 / 255]);
-		// 			// draw_bitmap_char(&(slot->bitmap), data, current_x, current_y); // second attempt, but nothing gets rendered
-		// 			data[(maxY - 1 - (y - current_y)) * width + x] = c;
-		// 		}
-		// 		// DEBUG:
-		// 		printf("\n");
-		// 	}
-		// 	current_x += (int)slot->bitmap.pitch;
-		// 	current_y += (int)pos[n].y_advance;
-		// }
 
 
 		unsigned int cursor_x = 0;

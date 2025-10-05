@@ -29,7 +29,8 @@ ColorTextureProgram::ColorTextureProgram() {
 		"in vec2 texCoord;\n"
 		"out vec4 fragColor;\n"
 		"void main() {\n"
-		"	fragColor = texture(TEX, texCoord) * color;\n"
+		// "	fragColor = texture(TEX, texCoord) * color;\n"
+		"	fragColor = vec4(color.rgb, texture(TEX, texCoord).r * color.a);\n" // provided by Jim McCann
 		"}\n"
 	);
 	//As you can see above, adjacent strings in C/C++ are concatenated.

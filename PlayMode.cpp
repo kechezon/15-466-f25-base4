@@ -326,7 +326,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		//---------------  create and upload texture data ----------------
 		// TEXT RENDERING ATTEMPT
 		/******************************************************
-		 * Based on circle drawing code provided by Jim McCann
+		 * Based on xor/circle rendering code provided by Jim McCann
 		 ******************************************************/
 		//texture size:
 		unsigned int width = 0;
@@ -341,7 +341,8 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 			printf("%c: (%i + %i), (%i + %i)\n", text[i], pos[i].x_offset, pos[i].x_advance, pos[i].y_offset, pos[i].y_advance);
 
-			width += (GLsizei)(pos[i].x_offset + pos[i].x_advance); // right now im basically trying to draw the letters next to each other
+			// width += (GLsizei)(pos[i].x_offset + pos[i].x_advance); // right now im basically trying to draw the letters next to each other
+			width += (GLsizei)(slot->bitmap.width); // right now im basically trying to draw the letters next to each other
 			height = (GLsizei)(std::max(height, slot->bitmap.rows)); //pos[i].y_offset and y_advance are 0...
 			// std::cout << "(" << pos[n].x_advance << ", " << pos[n].y_advance << ")" << std::endl;
 		}
@@ -382,11 +383,14 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 			// loop things
 			for (unsigned int y = 0; y < slot->bitmap.rows; y++) {
-				unsigned int glyph_width = pos[i].x_offset + pos[i].x_advance;
+				unsigned int glyph_width = slot->bitmap.width;
 				for (unsigned int x = 0; x < glyph_width; x++) {
 					uint8_t c = (slot->bitmap.buffer)[y * glyph_width + x]; // retrieve value
 					printf("%c", intensity[((unsigned int) c) * 8 / 255]);
-					data[(cursor_y + y) * width + (cursor_x + x)] = c; // place in data to be drawn
+
+					// we read from the bitmap and to the data in opposite directions, so the indexing needs to be flipped!
+					int data_y = slot->bitmap.rows - (cursor_y + y) - 1;
+					data[data_y * width + (cursor_x + x)] = c; // place in data to be drawn
 				}
 				printf("\n");
 			}
@@ -485,22 +489,22 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		//if drawn as a triangle strip, this will be a square with the lower-left corner at (0,0) and the upper right at (1,1):
 		attribs.emplace_back(Vertex{
 			.Position = glm::vec2(-0.9f, -1.0f),
-			.Color = glm::u8vec4(0xff, 0xff, 0xff, 0xff),
+			.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
 			.TexCoord = glm::vec2(0.0f, 0.0f),
 		});
 			attribs.emplace_back(Vertex{
 			.Position = glm::vec2(-0.9f, -0.25f),
-			.Color = glm::u8vec4(0xff, 0xff, 0xff, 0xff),
+			.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
 			.TexCoord = glm::vec2(0.0f, 1.0f),
 		});
 		attribs.emplace_back(Vertex{
 			.Position = glm::vec2(0.9f, -1.0f),
-			.Color = glm::u8vec4(0xff, 0xff, 0xff, 0xff),
+			.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
 			.TexCoord = glm::vec2(1.0f, 0.0f),
 		});
 		attribs.emplace_back(Vertex{
 			.Position = glm::vec2(0.9f, -0.25f),
-			.Color = glm::u8vec4(0xff, 0xff, 0xff, 0xff),
+			.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
 			.TexCoord = glm::vec2(1.0f, 1.0f),
 		});
 
@@ -510,7 +514,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 		/******************************************
-		 * /end Jim's provided text rendering code
+		 * /end Jim's provided xor/circle image rendering code
 		 ******************************************/
 
 

@@ -342,7 +342,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 			printf("%c: (%i + %i), (%i + %i)\n", text[i], pos[i].x_offset, pos[i].x_advance, pos[i].y_offset, pos[i].y_advance);
 
 			width += (GLsizei)(pos[i].x_offset + pos[i].x_advance); // right now im basically trying to draw the letters next to each other
-			height = (GLsizei)(std::max(height, slot->bitmap.rows));
+			height = (GLsizei)(std::max(height, slot->bitmap.rows)); //pos[i].y_offset and y_advance are 0...
 			// std::cout << "(" << pos[n].x_advance << ", " << pos[n].y_advance << ")" << std::endl;
 		}
 		std::vector< uint8_t > data(width*height, 0);

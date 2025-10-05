@@ -352,7 +352,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		printf("Vector of size %i by %i\n", width, height);
 
 		// DEBUG
-		char intensity[10] = " .-*#xOX@";
+		// char intensity[10] = " .-*#xOX@";
 
 
 		unsigned int cursor_x = 0;
@@ -367,7 +367,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 				unsigned int glyph_width = slot->bitmap.width;
 				for (unsigned int x = 0; x < glyph_width; x++) {
 					uint8_t c = (slot->bitmap.buffer)[y * glyph_width + x]; // retrieve value
-					printf("%c", intensity[((unsigned int) c) * 8 / 255]);
+					// printf("%c", intensity[((unsigned int) c) * 8 / 255]);
 
 					// we read from the bitmap and to the data in opposite directions, so the indexing needs to be flipped!
 					int data_y = slot->bitmap.rows - (cursor_y + y) - 1;
@@ -381,6 +381,8 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 			cursor_x += slot->bitmap.width;
 		}
 
+		// TODO: Move to initialization
+		{
 		//need a name for the texture object:
 		GLuint tex = 0;
 		glGenTextures(1, &tex); // store 1 texture name in tex
@@ -494,9 +496,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		glBufferData(GL_ARRAY_BUFFER, attribs.size() * sizeof(attribs[0]), attribs.data(), GL_STREAM_DRAW);
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-		/******************************************
-		 * /end Jim's provided xor/circle image rendering code
-		 ******************************************/
+		
 
 
 		//----------- draw the mesh -----------
@@ -542,6 +542,9 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		buffer = 0;
 		glDeleteTextures(1, &tex);
 		tex = 0;
+		/******************************************
+		 * /end Jim's provided xor/circle image rendering code
+		 ******************************************/
 }
 
 glm::vec3 PlayMode::get_leg_tip_position() {

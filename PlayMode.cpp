@@ -125,7 +125,8 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 	//texture size:
 	unsigned int width = 0;
 	unsigned int height = 0;
-	unsigned int dip = 0;
+	unsigned int up = 0;
+	unsigned int down = 0;
 	//pixel data for texture:
 	FT_GlyphSlot slot = face->glyph; // shortcut to where we'll draw the glyph. FT_GlyphSlot is a pointer type
 
@@ -136,7 +137,7 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 		FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
 
 		// printf("%c: (%i + %i), (%i + %i)\n", mytext[i], slot->bitmap_left, slot->bitmap.width, slot->bitmap_top, slot->bitmap.rows);
-		printf("%c: (%i + %i), (%i + %i)\n", mytext[i], slot->bitmap_left, pos[i].x_advance >> 6, slot->bitmap_top, slot->bitmap.rows);
+		// printf("%c: (%i + %i), (%i + %i)\n", mytext[i], slot->bitmap_left, pos[i].x_advance >> 6, slot->bitmap_top, slot->bitmap.rows);
 		// printf("%c: (%i + %i), (%i + %i)\n", mytext[i], pos[i].x_offset, pos[i].x_advance, pos[i].y_offset, pos[i].y_advance);
 		// printf("%c: %i->%i, %i->%i\n", mytext[i], slot->bitmap_left, (slot->bitmap_left) + (slot->bitmap.width),
 												//   (slot->bitmap_top), (slot->bitmap_top) + (slot->bitmap.rows));
@@ -144,16 +145,19 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 		// width += (GLsizei)(pos[i].x_offset + pos[i].x_advance); // right now im basically trying to draw the letters next to each other
 		// width += (GLsizei)(slot->bitmap.width); // right now im basically trying to draw the letters next to each other
 		// height = (GLsizei)(std::max(height, slot->bitmap.rows)); //pos[i].y_offset and y_advance are 0...
-		width += (GLsizei)(pos[i].x_advance >> 6);
-		height = (GLsizei)(std::max(height, (unsigned int)(slot->bitmap_top))); //pos[i].y_offset and y_advance are 0...
-		dip = (GLsizei)(std::max(dip, slot->bitmap.rows - slot->bitmap_top));
+		printf("%c: %i and %i\n", mytext[i], slot->bitmap_top, slot->bitmap.rows);
+		width += (GLsizei)(slot->bitmap_left + (pos[i].x_advance >> 6));
+		// height = (GLsizei)(std::max(height, (unsigned int) (slot->bitmap_top))); //pos[i].y_offset and y_advance are 0...
+		up = (GLsizei)(std::max(up, (unsigned int) slot->bitmap_top));
+		down = (GLsizei)(std::max(down, slot->bitmap.rows - slot->bitmap_top));
 		// std::cout << "(" << pos[n].x_advance << ", " << pos[n].y_advance << ")" << std::endl;
 	}
-	std::vector< uint8_t > data(width*(height + dip), 0);
-	printf("Vector of size %i by (%i+%i) (%i)\n", width, height, dip, width * (height+dip));
+	height = up + down;
+	std::vector< uint8_t > data(width*(height), 0);
+	printf("Vector of size %i by (%i+%i) (%i)\n", width, up, down, width * (height));
 
 	// DEBUG
-	char intensity[10] = " .-*#xOX@";
+	// char intensity[10] = " .-*#xOX@";
 
 	unsigned int cursor_x = 0;
 	unsigned int cursor_y = 0;
@@ -162,15 +166,16 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 		FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
 		FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
 
-		printf("%i\n", slot->bitmap.rows);
+		// printf("%i\n", slot->bitmap.rows);
 
 		// loop things to draw the character
 		// for (unsigned int y = 0; y < slot->bitmap.rows; y++) {
 		// for (unsigned int y = 0; y < (unsigned int)(slot->bitmap_top); y++) {
+		// for (unsigned int y = 0; y < (unsigned int)(slot->bitmap.rows); y++) {
 		for (unsigned int y = 0; y < (unsigned int)(slot->bitmap.rows); y++) {
 			unsigned int glyph_width = slot->bitmap.width;
-			int my_dip = slot->bitmap.rows - slot->bitmap_top; // how far below the baseline do you dip
-			my_dip = my_dip > 0 ? my_dip : 0;
+			int my_down = slot->bitmap.rows - slot->bitmap_top; // how far below the baseline do you dip
+			// my_dip = my_dip > 0 ? my_dip : 0;
 
 			// we read from the bitmap and to the data in opposite directions, so the indexing needs to be flipped!
 			// TODO: HOW DO I INDEX?!?!
@@ -180,21 +185,22 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 			for (unsigned int x = 0; x < glyph_width; x++) {
 				uint8_t c = (slot->bitmap.buffer)[(slot->bitmap.rows - y - 1) * glyph_width + x]; // retrieve value
 				// uint8_t c = (slot->bitmap.buffer)[(y) * glyph_width + x]; // retrieve value
-				printf("%c", intensity[((unsigned int) c) * 8 / 255]); // debug shows whole letter
-
-				// data[data_y * width + (cursor_x + x + slot->bitmap_left)] = c; // place in data to be drawn
-				// if (data_y >= 0)
-					// data[data_y * width + (cursor_x + x + slot->bitmap_left)] = c; // place in data to be drawn
-				// but data gets cut off above a certain point
-				data[(cursor_y + y + (dip - my_dip)) * width + (cursor_x + x + slot->bitmap_left)] = c; // place in data to be drawn
+				// printf("%c", intensity[((unsigned int) c) * 8 / 255]); // debug shows whole letter
+				data[(cursor_y + y + down - my_down) * width + (cursor_x + x + slot->bitmap_left)] = c; // place in data to be drawn
+				// data[(cursor_y + y + (dip - my_dip)) * width + (cursor_x + x + slot->bitmap_left)] = 255; // place in data to be drawn
 			}
-			printf("\n");
+			//printf("\n");
 		}
 
-		printf("\n\n");
+		// printf("\n\n");
 
 		cursor_x += pos[i].x_advance >> 6;
 	}
+
+	/*for (unsigned int i = 0; i < data.size(); i++) {
+		data[i] = 255;
+	}*/
+
 	// for (unsigned int i = 0; i < width; i++) {
 	// 	data[i] = 255;
 	// 	data[int(((height + dip - 1) * width * 0.5f)) + i] = 255;
@@ -303,17 +309,17 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 	});
 	attribs->emplace_back(Vertex{
 		.Position = glm::vec2(left_clip, top_clip),
-		.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
+		.Color = glm::u8vec4(0xff, 0xff, 0x00, 0xff),
 		.TexCoord = glm::vec2(0.0f, 1.0f),
 	});
 	attribs->emplace_back(Vertex{
 		.Position = glm::vec2(right_clip, bottom_clip),
-		.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
+		.Color = glm::u8vec4(0xff, 0x00, 0xff, 0xff),
 		.TexCoord = glm::vec2(1.0f, 0.0f),
 	});
 	attribs->emplace_back(Vertex{
 		.Position = glm::vec2(right_clip, top_clip),
-		.Color = glm::u8vec4(0xff, 0x00, 0x00, 0xff),
+		.Color = glm::u8vec4(0xff, 0xff, 0xff, 0xff),
 		.TexCoord = glm::vec2(1.0f, 1.0f),
 	});
 
@@ -323,42 +329,6 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 	return buffer;
-
-
-	//----------- draw the mesh -----------
-	// TODO: this should be done every frame?
-
-	//draw using the color_texture_program:
-	// glUseProgram(color_texture_program->program);
-	// //draw with attributes from our buffer, as referenced by the vertex array:
-	// glBindVertexArray(buffer_for_color_texture_program);
-	// //draw using texture stored in tex:
-	// glBindTexture(GL_TEXTURE_2D, tex);
-	
-	// //this particular shader program multiplies all positions by this matrix: (hmm, old naming style; I should have fixed that)
-	// // (just setting it to the identity, so Positions are directly in clip space)
-	// glUniformMatrix4fv(color_texture_program->OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
-
-	// //draw without depth testing (so will draw atop everything else):
-	// glDisable(GL_DEPTH_TEST);
-	// //draw with alpha blending (so transparent parts of the texture look transparent):
-	// glEnable(GL_BLEND);
-	// //standard 'over' blending:
-	// glBlendEquation(GL_FUNC_ADD);
-	// glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	// //actually draw:
-	// glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei)attribs.size());
-
-
-	// //turn off blending:
-	// glDisable(GL_BLEND);
-	// //...leave depth test off, since code that wants it will turn it back on
-
-	// //unbind texture, vertex array, program:
-	// glBindTexture(GL_TEXTURE_2D, 0);
-	// glBindVertexArray(0);
-	// glUseProgram(0);
 }
 
 PlayMode::PlayMode() : scene(*hexapod_scene) {
@@ -408,7 +378,7 @@ PlayMode::PlayMode() : scene(*hexapod_scene) {
 	hb_font = hb_ft_font_create(face, NULL); // uses face to create hb font. second argument is a callback to call when font object is not needed (destructor)
 
 	// create_text("Hello World!!", -0.9f, 0.9f, -1.0f, -0.25f);
-	create_text("Hello? Triangle!", -0.9f, 0.9f, 0.0f, 0.5f);
+	create_text("Hello? Triangle!", -0.9f, 0.9f, 0.5f, 1.0f);
 
 	// hb_buffer_add_utf8(hb_buffer, text, -1, 0, -1);
 	// hb_buffer_guess_segment_properties(hb_buffer); // sets unset buffer segment properties based on buffer's contents

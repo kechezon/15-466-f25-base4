@@ -46,9 +46,13 @@ hb_glyph_info_t *info;
 hb_glyph_position_t *pos; // returns array of positions. Same arg 2 return and buffer modification disclaimer
 
 GLuint hexapod_meshes_for_lit_color_texture_program = 0;
-GLuint buffer_for_color_texture_program = 0;
+GLuint buffer1_for_color_texture_program = 0;
+GLuint buffer2_for_color_texture_program = 0;
 GLuint tex1 = 0;
 GLuint tex2 = 0;
+GLuint v_buffer1 = 0;
+GLuint v_buffer2 = 0;
+
 
 //format for the mesh data:
 struct Vertex {
@@ -101,9 +105,8 @@ Load< Sound::Sample > honk_sample(LoadTagDefault, []() -> Sound::Sample const * 
  * https://github.com/harfbuzz/harfbuzz-tutorial/blob/master/hello-harfbuzz-freetype.c
  ******************************************************/
 
-GLuint create_text(const char *mytext, float left_clip, float right_clip, float bottom_clip, float top_clip) {
-	
-
+// GLuint create_text(const char *mytext, float left_clip, float right_clip, float bottom_clip, float top_clip) {
+void create_text(const char *mytext, float left_clip, float right_clip, float bottom_clip, float top_clip) {
 	 // harfbuzz buffer things
 	// replaces invalid UTF-8 characters with hb_buffer's replacement codepoint
 		/* Create hb-buffer and populate*/
@@ -197,28 +200,22 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 		cursor_x += pos[i].x_advance >> 6;
 	}
 
-	/*for (unsigned int i = 0; i < data.size(); i++) {
-		data[i] = 255;
-	}*/
-
-	// for (unsigned int i = 0; i < width; i++) {
-	// 	data[i] = 255;
-	// 	data[int(((height + dip - 1) * width * 0.5f)) + i] = 255;
-	// }
-	// data[0] = 255;
-	// data[width] = 255;
-	// data[((height+dip) - 1) * width] = 255;
-	// data[((height+dip) - 1) * width + (width - 1)] = 255;
-
 	//---------------  create and upload texture data ----------------
 
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	// This code, up to "draw mesh" (exclusive) should be called only when creating new text
 	//need a name for the texture object:
 	// GLuint tex = 0;
-	glGenTextures(1, &tex1); // store 1 texture name in tex1
-	//attach texture object to the GL_TEXTURE_2D binding point:
-	glBindTexture(GL_TEXTURE_2D, tex1);
+	if (drawcount == 0) {
+		glGenTextures(1, &tex1); // store 1 texture name in tex1
+		//attach texture object to the GL_TEXTURE_2D binding point:
+		glBindTexture(GL_TEXTURE_2D, tex1);
+	} else {
+		glGenTextures(1, &tex2); // store 1 texture name in tex1
+		//attach texture object to the GL_TEXTURE_2D binding point:
+		glBindTexture(GL_TEXTURE_2D, tex2);
+	}
+
 	//upload data: (see: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glTexImage2D.xhtml )
 	glTexImage2D(
 		GL_TEXTURE_2D, //target -- the binding point this call is uploading to
@@ -249,19 +246,35 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 	//----------- set up place to store mesh that references the data -----------
 
 	//create a buffer object to store mesh data in:
-	GLuint buffer = 0;
-	glGenBuffers(1, &buffer);
-	glBindBuffer(GL_ARRAY_BUFFER, buffer); //(buffer created when bound)
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	if (drawcount == 0) {
+		glGenBuffers(1, &v_buffer1);
+		glBindBuffer(GL_ARRAY_BUFFER, v_buffer1); //(buffer created when bound)
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
+	else {
+		glGenBuffers(1, &v_buffer2);
+		glBindBuffer(GL_ARRAY_BUFFER, v_buffer2); //(buffer created when bound)
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
 
 	//create a vertex array object that references the buffer:
-	buffer_for_color_texture_program = 0;
-	glGenVertexArrays(1, &buffer_for_color_texture_program);
-	glBindVertexArray(buffer_for_color_texture_program);
+	if (drawcount == 0) {
+		buffer1_for_color_texture_program = 0;
+		glGenVertexArrays(1, &buffer1_for_color_texture_program);
+		glBindVertexArray(buffer1_for_color_texture_program);
+	}
+	else {
+		buffer2_for_color_texture_program = 0;
+		glGenVertexArrays(1, &buffer2_for_color_texture_program);
+		glBindVertexArray(buffer2_for_color_texture_program);
+	}
 
 	//configure the vertex array object:
 
-	glBindBuffer(GL_ARRAY_BUFFER, buffer); //will take data from 'buffer'
+	if (drawcount == 0)
+		glBindBuffer(GL_ARRAY_BUFFER, v_buffer1); //will take data from 'buffer'
+	else
+		glBindBuffer(GL_ARRAY_BUFFER, v_buffer2);
 
 	//set up Position to read from the buffer:
 	//see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glVertexAttribPointer.xhtml
@@ -294,7 +307,6 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 	if (drawcount == 0) {
 		attribs1.reserve(4);
 		attribs = &attribs1;
-		drawcount++;
 	}
 	else {
 		attribs2.reserve(4);
@@ -324,11 +336,17 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 	});
 
 	//upload attribs to buffer:
-	glBindBuffer(GL_ARRAY_BUFFER, buffer);
+	if (drawcount == 0) {
+		glBindBuffer(GL_ARRAY_BUFFER, v_buffer1);
+		drawcount++;
+	}
+	else {
+		glBindBuffer(GL_ARRAY_BUFFER, v_buffer2);
+	}
 	glBufferData(GL_ARRAY_BUFFER, attribs->size() * sizeof((*attribs)[0]), attribs->data(), GL_STREAM_DRAW);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-	return buffer;
+	// return buffer;
 }
 
 PlayMode::PlayMode() : scene(*hexapod_scene) {
@@ -378,7 +396,8 @@ PlayMode::PlayMode() : scene(*hexapod_scene) {
 	hb_font = hb_ft_font_create(face, NULL); // uses face to create hb font. second argument is a callback to call when font object is not needed (destructor)
 
 	// create_text("Hello World!!", -0.9f, 0.9f, -1.0f, -0.25f);
-	create_text("Hello? Triangle!", -0.9f, 0.9f, 0.5f, 1.0f);
+	create_text("Hello World!", -0.9f, 0.9f, 0.5f, 1.0f);
+	create_text("Triangle?", -0.9f, 0.9f, -1.0f, -0.5f);
 
 	// hb_buffer_add_utf8(hb_buffer, text, -1, 0, -1);
 	// hb_buffer_guess_segment_properties(hb_buffer); // sets unset buffer segment properties based on buffer's contents
@@ -566,46 +585,12 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	GL_ERRORS();
 
 
-	// {	
-	// 	glUseProgram(color_texture_program->program);
-	// 	//draw with attributes from our buffer, as referenced by the vertex array:
-	// 	glBindVertexArray(buffer_for_color_texture_program);
-	// 	//draw using texture stored in tex1:
-	// 	glBindTexture(GL_TEXTURE_2D, tex2);
-		
-	// 	//this particular shader program multiplies all positions by this matrix: (hmm, old naming style; I should have fixed that)
-	// 	// (just setting it to the identity, so Positions are directly in clip space)
-	// 	glUniformMatrix4fv(color_texture_program->OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
-
-	// 	//draw without depth testing (so will draw atop everything else):
-	// 	glDisable(GL_DEPTH_TEST);
-	// 	//draw with alpha blending (so transparent parts of the texture look transparent):
-	// 	glEnable(GL_BLEND);
-	// 	//standard 'over' blending:
-	// 	glBlendEquation(GL_FUNC_ADD);
-	// 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	// 	//actually draw:
-	// 	glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei)attribs2.size());
-
-
-	// 	//turn off blending:
-	// 	glDisable(GL_BLEND);
-	// 	//...leave depth test off, since code that wants it will turn it back on
-
-
-	// 	//unbind texture, vertex array, program:
-	// 	glBindTexture(GL_TEXTURE_2D, 0);
-	// 	glBindVertexArray(0);
-	// 	glUseProgram(0);
-	// }
-
 	/******************************************************
 	 * TEXT RENDERING ATTEMPT
 	 * Adapted from xor/circle rendering code provided by Jim McCann
 	 ******************************************************/
 	//GLuint buffer =
-	drawcount = 0;
+	// drawcount = 0;
 
 	//----------- draw the mesh -----------
 	// this should be done every frame?
@@ -614,7 +599,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	{	
 		glUseProgram(color_texture_program->program);
 		//draw with attributes from our buffer, as referenced by the vertex array:
-		glBindVertexArray(buffer_for_color_texture_program);
+		glBindVertexArray(buffer1_for_color_texture_program);
 		//draw using texture stored in tex1:
 		glBindTexture(GL_TEXTURE_2D, tex1);
 		
@@ -632,6 +617,40 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 		//actually draw:
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei)attribs1.size());
+
+
+		//turn off blending:
+		glDisable(GL_BLEND);
+		//...leave depth test off, since code that wants it will turn it back on
+
+
+		//unbind texture, vertex array, program:
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glBindVertexArray(0);
+		glUseProgram(0);
+	}
+
+		{	
+		glUseProgram(color_texture_program->program);
+		//draw with attributes from our buffer, as referenced by the vertex array:
+		glBindVertexArray(buffer2_for_color_texture_program);
+		//draw using texture stored in tex1:
+		glBindTexture(GL_TEXTURE_2D, tex2);
+		
+		//this particular shader program multiplies all positions by this matrix: (hmm, old naming style; I should have fixed that)
+		// (just setting it to the identity, so Positions are directly in clip space)
+		glUniformMatrix4fv(color_texture_program->OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
+
+		//draw without depth testing (so will draw atop everything else):
+		glDisable(GL_DEPTH_TEST);
+		//draw with alpha blending (so transparent parts of the texture look transparent):
+		glEnable(GL_BLEND);
+		//standard 'over' blending:
+		glBlendEquation(GL_FUNC_ADD);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+		//actually draw:
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei)attribs2.size());
 
 
 		//turn off blending:

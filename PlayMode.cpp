@@ -125,6 +125,7 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 	//texture size:
 	unsigned int width = 0;
 	unsigned int height = 0;
+	unsigned int dip = 0;
 	//pixel data for texture:
 	FT_GlyphSlot slot = face->glyph; // shortcut to where we'll draw the glyph. FT_GlyphSlot is a pointer type
 
@@ -134,19 +135,25 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 		FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
 		FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
 
-		// printf("%c: (%i + %i), (%i + %i)\n", text[i], pos[i].x_offset, pos[i].x_advance, pos[i].y_offset, pos[i].y_advance);
-		printf("%c: %i, %i\n", mytext[i], slot->bitmap.width, slot->bitmap.rows);
+		// printf("%c: (%i + %i), (%i + %i)\n", mytext[i], slot->bitmap_left, slot->bitmap.width, slot->bitmap_top, slot->bitmap.rows);
+		printf("%c: (%i + %i), (%i + %i)\n", mytext[i], slot->bitmap_left, pos[i].x_advance >> 6, slot->bitmap_top, slot->bitmap.rows);
+		// printf("%c: (%i + %i), (%i + %i)\n", mytext[i], pos[i].x_offset, pos[i].x_advance, pos[i].y_offset, pos[i].y_advance);
+		// printf("%c: %i->%i, %i->%i\n", mytext[i], slot->bitmap_left, (slot->bitmap_left) + (slot->bitmap.width),
+												//   (slot->bitmap_top), (slot->bitmap_top) + (slot->bitmap.rows));
 
 		// width += (GLsizei)(pos[i].x_offset + pos[i].x_advance); // right now im basically trying to draw the letters next to each other
-		width += (GLsizei)(slot->bitmap.width); // right now im basically trying to draw the letters next to each other
-		height = (GLsizei)(std::max(height, slot->bitmap.rows)); //pos[i].y_offset and y_advance are 0...
+		// width += (GLsizei)(slot->bitmap.width); // right now im basically trying to draw the letters next to each other
+		// height = (GLsizei)(std::max(height, slot->bitmap.rows)); //pos[i].y_offset and y_advance are 0...
+		width += (GLsizei)(pos[i].x_advance >> 6);
+		height = (GLsizei)(std::max(height, (unsigned int)(slot->bitmap_top))); //pos[i].y_offset and y_advance are 0...
+		dip = (GLsizei)(std::max(dip, slot->bitmap.rows - slot->bitmap_top));
 		// std::cout << "(" << pos[n].x_advance << ", " << pos[n].y_advance << ")" << std::endl;
 	}
-	std::vector< uint8_t > data(width*height, 0);
-	printf("Vector of size %i by %i (%i)\n", width, height, width * height);
+	std::vector< uint8_t > data(width*(height + dip), 0);
+	printf("Vector of size %i by (%i+%i) (%i)\n", width, height, dip, width * (height+dip));
 
 	// DEBUG
-	// char intensity[10] = " .-*#xOX@";
+	char intensity[10] = " .-*#xOX@";
 
 	unsigned int cursor_x = 0;
 	unsigned int cursor_y = 0;
@@ -155,31 +162,51 @@ GLuint create_text(const char *mytext, float left_clip, float right_clip, float 
 		FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
 		FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
 
+		printf("%i\n", slot->bitmap.rows);
+
 		// loop things to draw the character
-		for (unsigned int y = 0; y < slot->bitmap.rows; y++) {
+		// for (unsigned int y = 0; y < slot->bitmap.rows; y++) {
+		// for (unsigned int y = 0; y < (unsigned int)(slot->bitmap_top); y++) {
+		for (unsigned int y = 0; y < (unsigned int)(slot->bitmap.rows); y++) {
 			unsigned int glyph_width = slot->bitmap.width;
+			int my_dip = slot->bitmap.rows - slot->bitmap_top; // how far below the baseline do you dip
+			my_dip = my_dip > 0 ? my_dip : 0;
+
+			// we read from the bitmap and to the data in opposite directions, so the indexing needs to be flipped!
+			// TODO: HOW DO I INDEX?!?!
+			// int data_y = (height - 1) - (cursor_y + y) + my_dip;// - (dip - my_dip); // + (diff < (int)dip ? (int)diff - dip: 0));
+			// int data_y = ((height+dip) - 1) - (cursor_y + y);// - (dip - my_dip); // + (diff < (int)dip ? (int)diff - dip: 0));
+			// printf("%c: %i\n", mytext[i], data_y);
 			for (unsigned int x = 0; x < glyph_width; x++) {
-				uint8_t c = (slot->bitmap.buffer)[y * glyph_width + x]; // retrieve value
-				// printf("%c", intensity[((unsigned int) c) * 8 / 255]);
+				uint8_t c = (slot->bitmap.buffer)[(slot->bitmap.rows - y - 1) * glyph_width + x]; // retrieve value
+				// uint8_t c = (slot->bitmap.buffer)[(y) * glyph_width + x]; // retrieve value
+				printf("%c", intensity[((unsigned int) c) * 8 / 255]); // debug shows whole letter
 
-				// we read from the bitmap and to the data in opposite directions, so the indexing needs to be flipped!
-				int data_y = slot->bitmap.rows - (cursor_y + y) - 1;
-
-				if (y == 0)
-					printf("index %i\n", data_y * width + (cursor_x + x));
-
-				data[data_y * width + (cursor_x + x)] = c; // place in data to be drawn
+				// data[data_y * width + (cursor_x + x + slot->bitmap_left)] = c; // place in data to be drawn
+				// if (data_y >= 0)
+					// data[data_y * width + (cursor_x + x + slot->bitmap_left)] = c; // place in data to be drawn
+				// but data gets cut off above a certain point
+				data[(cursor_y + y + (dip - my_dip)) * width + (cursor_x + x + slot->bitmap_left)] = c; // place in data to be drawn
 			}
-			// printf("\n");
+			printf("\n");
 		}
 
-		// printf("\n\n");
+		printf("\n\n");
 
-		cursor_x += slot->bitmap.width;
+		cursor_x += pos[i].x_advance >> 6;
 	}
+	// for (unsigned int i = 0; i < width; i++) {
+	// 	data[i] = 255;
+	// 	data[int(((height + dip - 1) * width * 0.5f)) + i] = 255;
+	// }
+	// data[0] = 255;
+	// data[width] = 255;
+	// data[((height+dip) - 1) * width] = 255;
+	// data[((height+dip) - 1) * width + (width - 1)] = 255;
 
 	//---------------  create and upload texture data ----------------
 
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	// This code, up to "draw mesh" (exclusive) should be called only when creating new text
 	//need a name for the texture object:
 	// GLuint tex = 0;
@@ -381,7 +408,7 @@ PlayMode::PlayMode() : scene(*hexapod_scene) {
 	hb_font = hb_ft_font_create(face, NULL); // uses face to create hb font. second argument is a callback to call when font object is not needed (destructor)
 
 	// create_text("Hello World!!", -0.9f, 0.9f, -1.0f, -0.25f);
-	create_text("Triangle?", -0.9f, 0.9f, 0.25f, 1.0f);
+	create_text("Hello? Triangle!", -0.9f, 0.9f, 0.0f, 0.5f);
 
 	// hb_buffer_add_utf8(hb_buffer, text, -1, 0, -1);
 	// hb_buffer_guess_segment_properties(hb_buffer); // sets unset buffer segment properties based on buffer's contents
@@ -607,7 +634,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	 * TEXT RENDERING ATTEMPT
 	 * Adapted from xor/circle rendering code provided by Jim McCann
 	 ******************************************************/
-	GLuint buffer = create_text("Hello World!", -0.9f, 0.9f, 0.25f, 1.0f);
+	//GLuint buffer =
 	drawcount = 0;
 
 	//----------- draw the mesh -----------
@@ -650,12 +677,12 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	// ----------- free allocated buffers / data -----------
 
-	glDeleteVertexArrays(1, &buffer_for_color_texture_program);
-	buffer_for_color_texture_program = 0;
-	glDeleteBuffers(1, &buffer);
-	buffer = 0;
-	glDeleteTextures(1, &tex1);
-	tex1 = 0;
+	// glDeleteVertexArrays(1, &buffer_for_color_texture_program);
+	// buffer_for_color_texture_program = 0;
+	// glDeleteBuffers(1, &buffer);
+	// buffer = 0;
+	// glDeleteTextures(1, &tex1);
+	// tex1 = 0;
 	/******************************************
 	 * /end Jim's provided xor/circle image rendering code
 	 ******************************************/
